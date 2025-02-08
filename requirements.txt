@@ -1,0 +1,9 @@
+solara
+numpy
+matplotlib
+astropy
+ipywidgets
+pandas
+s3fs
+aesop @ git+https://github.com/bmorris3/aesop
+lcviz @ git+https://github.com/bmorris3/lcviz@swap-periodogram-methods
