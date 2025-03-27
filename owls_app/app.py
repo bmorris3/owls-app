@@ -4,7 +4,7 @@ import solara
 import re
 import numpy as np
 from echo import delay_callback
-import s3fs
+import json
 
 import matplotlib.pyplot as plt
 from matplotlib.colors import to_hex
@@ -29,21 +29,36 @@ from lightkurve import LightCurve
 from aesop import EchelleSpectrum
 from specutils import Spectrum1D
 import pandas as pd
+from astropy.utils.data import download_files_in_parallel
 
 
-s3 = s3fs.S3FileSystem()
-bucket = 'owls-spectra'
-owls_bucket = list(filter(lambda x: '__' in x and '.fits' in x, s3.ls(bucket)))
-spectra_paths = [f's3://{prefix}' for prefix in owls_bucket if 'fits.gz' in prefix]
-standard_path = f's3://{bucket}/HZ44.0016.wfrmcpc.fits'
-standard_spectrum = EchelleSpectrum.from_fits(standard_path)
+pkgname = 'owls-app'
 
-mwo_path = f's3://{bucket}/s-indices/mwo_v1995.pkl'
-mwo_v1995 = pd.read_pickle(mwo_path)
+urls = dict(
+    manifest='https://stsci.box.com/shared/static/3duv3ywn7fzx75mybk4k7d6533f1sjj4.json',
+    standard='https://stsci.box.com/shared/static/9cfsb23t644gbzh5b936wennypwzql2g.fits',
+    mwo='https://stsci.box.com/shared/static/6brcqyfb0y1kx0phub1f6his9rcz7c26.pkl',
+    owls='https://stsci.box.com/shared/static/72jp0im3qcs26etr8j4fiuq3cyxcfuxv.pkl',
+)
 
-owls_path = f's3://{bucket}/s-indices/owls_paper1_sindices_2025-02-07.pkl'
-owls = pd.read_pickle(owls_path)
 
+def download(urls, **kwargs):
+    if isinstance(urls, str):
+        urls = [urls]
+
+    return download_files_in_parallel(urls, pkgname=pkgname, cache=True, show_progress=False)
+
+
+downloaded_paths = download(urls.values())
+paths = {k: v for k, v in zip(urls.keys(), downloaded_paths)}
+
+owls_latest = json.load(open(paths['manifest'], 'r'))
+standard_spectrum = EchelleSpectrum.from_fits(paths['standard'])
+mwo_v1995 = pd.read_pickle(paths['mwo'])
+owls = pd.read_pickle(urls['owls'])
+specviz = None
+lcviz = None
+order_labels = None
 
 hd_target_names_owls = {
     # Strip non-numeric characters, force to integer
@@ -66,26 +81,33 @@ def to_spectrum1d(spec, meta=None):
 
 available_targets = sorted(
     set([
-        os.path.basename(path).split('__')[0]
-        for path in
-        owls_bucket
+        obs['target'] for obs in owls_latest
     ])
 )
 
 
-def update_specviz(selected_paths, selected_orders):
-    specviz = Specviz()
+def update_specviz(selected_paths, selected_times, selected_orders):
+    global specviz, order_labels
 
-    # remove "import data" button
-    specviz.app.state.tool_items = list(specviz.app.state.tool_items)[1:]
+    if specviz is None:
+        specviz = Specviz()
 
-    # prevent saving files on the server
-    specviz.plugins['Export']._obj.serverside_enabled = False
+        # close plugin tray
+        specviz.app.state.drawer = False
 
-    # close plugin tray
-    specviz.app.state.drawer = False
+    target_spectrum = None
 
-    for target_path in selected_paths:
+    for target_path, spectrum_time in zip(selected_paths, selected_times):
+        loaded_paths = [data.meta.get('path') for data in specviz.app.data_collection]
+        loaded_orders = {k: list() for k in loaded_paths}
+
+        for path in loaded_paths:
+            for data in specviz.app.data_collection:
+                loaded_orders[path].append(data.meta.get('order'))
+
+        if target_path in loaded_paths and len(loaded_orders[path]) == selected_orders:
+            continue
+
         target_spectrum = EchelleSpectrum.from_fits(target_path)
         target_spectrum.continuum_normalize_from_standard(
             standard_spectrum, 5, only_orders=selected_orders
@@ -103,21 +125,30 @@ def update_specviz(selected_paths, selected_orders):
         )
         for i in selected_orders:
             order_i = to_spectrum1d(target_spectrum[i], meta=target_spectrum.header)
-            time_target_label = f"{os.path.basename(target_path)}"
-            specviz.load_data(
-                order_i,
-                data_label=f'Order {i} ({time_target_label})'
-            )
+            data_label = f'{spectrum_time} (Order {i})'
+            specviz.load_data(order_i, data_label=data_label)
+            data = specviz.app.data_collection[data_label]
+            data.meta['path'] = target_path
+            data.meta['order'] = i
+
+    # remove loaded datasets that have been deselected
+    data_to_remove = []
+    for data in specviz.app.data_collection:
+        if data.meta.get('path') not in selected_paths or data.meta.get('order') not in selected_orders:
+            data_to_remove.append(data)
+    for data in data_to_remove:
+        specviz.app.data_collection.remove(data)
 
     viewer = specviz.app.get_viewer('spectrum-viewer')
 
     # skip these steps if no files selected
     if len(selected_paths):
-        all_orders = list(range(len(target_spectrum)))
-        order_labels = [
-            f'{i} ({target_spectrum[i].wavelength.value.min():.0f} - {target_spectrum[i].wavelength.value.max():.0f} Å) '
-            for i in all_orders
-        ]
+        if target_spectrum is not None:
+            all_orders = list(range(len(target_spectrum)))
+            order_labels = [
+                f'{i} ({target_spectrum[i].wavelength.value.min():.0f} - {target_spectrum[i].wavelength.value.max():.0f} Å) '
+                for i in all_orders
+            ]
 
         with delay_callback(viewer.state, 'x_min', 'x_max', 'y_min', 'y_max'):
             viewer.state.x_min = min([
@@ -135,24 +166,22 @@ def update_specviz(selected_paths, selected_orders):
 
         colors = [to_hex(plt.cm.viridis(x)) for x in np.linspace(0, 0.9, len(selected_paths))]
 
-        for start in [0, 1]:
-            for layer, color in zip(viewer.layers[start::2], colors):
-                layer.state.color = color
-    else:
-        order_labels = []
-
-    return specviz, order_labels
+        for layer in viewer.layers:
+            layer.state.as_steps = False
+            for i, path in enumerate(selected_paths):
+                if layer.layer.meta['path'] == path:
+                    layer.state.color = colors[i]
 
 
 def update_lcviz(target_name):
-
+    global lcviz
     target_in_mwo = (
             target_name.startswith('HD') and
-            int(target_name.split("_")[1]) in hd_target_names_owls.keys()
+            int(target_name.split()[1]) in hd_target_names_owls.keys()
     )
 
     if target_in_mwo:
-        mwo_measurements = mwo_v1995.loc[int(target_name.split("_")[1])]
+        mwo_measurements = mwo_v1995.loc[int(target_name.split()[1])]
 
         mwo_lc = LightCurve(
             time=Time(mwo_measurements.index.get_level_values('Date')).jd,
@@ -173,8 +202,13 @@ def update_lcviz(target_name):
         freq_at_max_power = freq[np.argmax(power)]
         period_at_max_power = (1 / freq_at_max_power).value
 
+    target_name_owls = target_name.replace("_", " ")
 
-    owls_measurements = owls.loc[target_name.replace("_", " ")]
+    # for now, the owls table has the ".01" suffix, but it shouldn't
+    if target_name.startswith("TOI"):
+        target_name_owls = target_name_owls + ".01"
+
+    owls_measurements = owls.loc[target_name_owls]
 
     owls_lc = LightCurve(
         time=Time(np.atleast_1d(owls_measurements['owls_time']), format='jd'),
@@ -188,16 +222,17 @@ def update_lcviz(target_name):
         model = ls.model(time_model, freq_at_max_power)
         model_lc = LightCurve(time=time_model, flux=model)
 
-    lcviz = LCviz()
+    if lcviz is None:
+        lcviz = LCviz()
 
-    # remove import data button
-    lcviz.app.state.tool_items.pop(0)
+        # remove import data button
+        lcviz.app.state.tool_items.pop(0)
 
-    # prevent saving files on the server
-    lcviz.plugins['Export']._obj.serverside_enabled = False
+        # prevent saving files on the server
+        lcviz.plugins['Export']._obj.serverside_enabled = False
 
-    # close plugin tray
-    lcviz.app.state.drawer = False
+        # close plugin tray
+        lcviz.app.state.drawer = False
 
     if target_in_mwo:
         freq_analysis = lcviz.plugins['Frequency Analysis']
@@ -241,11 +276,14 @@ def update_lcviz(target_name):
             plot_opts.marker_color = mc
             plot_opts.marker_opacity = mo
 
+        lcviz.app.get_viewer(viewer).state.y_axislabel = 'S-index'
+
     return lcviz
 
 
 @solara.component
 def Page():
+    global specviz, order_labels, lcviz
     ipysplitpanes.SplitPanes()
     ipygoldenlayout.GoldenLayout()
     for name, path in custom_components.items():
@@ -256,27 +294,40 @@ def Page():
 
     solara.Style(Path(__file__).parent / "solara.css")
 
-    target_name, set_target_name = solara.use_state('HD_81809')
+    target_name, set_target_name = solara.use_state('HD 81809')
 
-    def paths_for_target(target_name):
+    def urls_for_target(target_name):
         return sorted(
-            [path for path in spectra_paths if target_name in path]
+            [obs['url'] for obs in owls_latest if obs['target'] == target_name]
         )
 
+    def times_for_target(target_name):
+        return sorted(
+            [obs['datetime'] for obs in owls_latest if obs['target'] == target_name]
+        )
+
+    def paths_for_target(target_name):
+        urls = urls_for_target(target_name)
+        return download(urls)
+
     paths = paths_for_target(target_name)
+    times = times_for_target(target_name)
     maximum_files = 1
     selected_paths, set_selected_paths = solara.use_state(paths[:maximum_files])
+    selected_times, set_selected_times = solara.use_state(times[:maximum_files])
     selected_orders, set_selected_orders = solara.use_state([16, 17])
 
-    solara.Markdown("# OWLS – the Olin Wilson Legacy Survey")
+    if specviz is None:
+        update_specviz(selected_paths, selected_times, selected_orders)
+    if lcviz is None:
+        update_lcviz(target_name)
 
-    specviz, order_labels = update_specviz(selected_paths, selected_orders)
+    solara.Markdown("# OWLS – The Olin Wilson Legacy Survey")
 
     with solara.Column(align='center'):
         with solara.Row():
             solara.display(specviz.app)
         with solara.Row():
-            lcviz = update_lcviz(target_name)
             solara.display(lcviz.app)
 
         with solara.Row():
@@ -285,25 +336,42 @@ def Page():
                     solara.Markdown("### Target")
 
                     def on_target_change(target_name):
+                        global specviz, lcviz
+                        urls = urls_for_target(target_name)
+                        add_path = download(urls[0])
+                        add_times = times_for_target(target_name)
+                        specviz = lcviz = None  # force init of lcviz, specviz
+                        update_specviz(add_path, add_times[:1], selected_orders)
                         set_target_name(target_name)
-                        add_paths = paths_for_target(target_name)
-                        set_selected_paths(selected_paths + add_paths[0:1])
+                        set_selected_paths(add_path)
+                        set_selected_times(add_times[:1])
+
+                    def on_times_change(times):
+                        urls = [obs['url'] for obs in owls_latest if obs['datetime'] in times]
+                        add_paths = download(urls)
+                        update_specviz(add_paths, times, selected_orders)
+                        set_selected_paths(add_paths)
+                        set_selected_times(times)
 
                     solara.Select('Target', list(available_targets), target_name, on_target_change)
                     solara.SelectMultiple(
-                        'Observations', selected_paths, paths, set_selected_paths, dense=True,
+                        'Observations', selected_times, times, on_times_change, dense=True,
                     )
 
                     def on_all_obs():
-                        set_selected_paths(paths)
+                        all_times = [obs['datetime'] for obs in owls_latest if obs['target'] == target_name]
+                        on_times_change(all_times)
 
                     solara.Button("Select all obs.", on_all_obs)
 
                     def on_orders_changed(labels, order_labels=order_labels):
-                        set_selected_orders([order_labels.index(label) for label in labels])
+                        new_orders = [order_labels.index(label) for label in labels]
+                        update_specviz(selected_paths, selected_times, new_orders)
+                        set_selected_orders(new_orders)
 
                     def on_hk_orders_only():
                         set_selected_orders([16, 17])
+                        update_specviz(selected_paths, selected_times, selected_orders)
 
                 with solara.Column(align='start'):
                     solara.Markdown("### Spectral orders")
