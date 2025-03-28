@@ -1,0 +1,47 @@
+[build-system]
+requires = [
+  "setuptools>=62.1",
+  "setuptools_scm[toml]>=8.0.0",
+  "wheel",
+]
+
+build-backend = 'setuptools.build_meta'
+
+[project]
+name = "owls-app"
+dynamic = ['version']
+license = { file = "LICENSE", content-type = "text/plain" }
+readme = { file = "README.rst", content-type = "text/x-rst" }
+description = "Olin Wilson Legacy Survey"
+dependencies = [
+    "matplotlib",
+    "solara",
+    "ipywidgets",
+    "numpy",
+    "astropy",
+    "astroquery",
+    "expecto",
+    "specutils",
+    "pandas",
+    "lcviz",
+    "specutils",
+]
+authors = [
+  { name = "Brett Morris", email = "morrisbrettm@gmail.com" },
+]
+
+[project.scripts]
+owls-app = "owls_app.cli:launch_app"
+
+[project.urls]
+repository = "https://github.com/bmorris3/owls-app"
+
+[tools.setuptools]
+py-modules = ['owls_app']
+
+[tool.setuptools.packages.find]
+include = ["owls-app*"]
+
+[tool.setuptools_scm]
+version_file = "owls-app/version.py"
+

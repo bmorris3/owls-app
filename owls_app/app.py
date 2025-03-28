@@ -10,7 +10,6 @@ import matplotlib.pyplot as plt
 from matplotlib.colors import to_hex
 
 import astropy.units as u
-from astropy.io import fits
 from astropy.coordinates import SkyCoord, EarthLocation
 from astropy.time import Time
 from astropy.timeseries import LombScargle
