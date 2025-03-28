@@ -25,6 +25,7 @@ dependencies = [
     "pandas",
     "lcviz",
     "specutils",
+    "aesop-arces",
 ]
 authors = [
   { name = "Brett Morris", email = "morrisbrettm@gmail.com" },
@@ -36,12 +37,9 @@ owls-app = "owls_app.cli:launch_app"
 [project.urls]
 repository = "https://github.com/bmorris3/owls-app"
 
-[tools.setuptools]
-py-modules = ['owls_app']
-
 [tool.setuptools.packages.find]
-include = ["owls-app*"]
+include = ["owls_app*"]
 
 [tool.setuptools_scm]
-version_file = "owls-app/version.py"
+write_to = "owls_app/version.py"
 

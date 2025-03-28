@@ -172,7 +172,7 @@ def update_specviz(selected_paths, selected_times, selected_orders):
                     layer.state.color = colors[i]
 
 
-def update_lcviz(target_name):
+def update_lcviz(target_name, owls_measurements):
     global lcviz
     target_in_mwo = (
             target_name.startswith('HD') and
@@ -200,14 +200,6 @@ def update_lcviz(target_name):
         power = ls.power(freq)
         freq_at_max_power = freq[np.argmax(power)]
         period_at_max_power = (1 / freq_at_max_power).value
-
-    target_name_owls = target_name.replace("_", " ")
-
-    # for now, the owls table has the ".01" suffix, but it shouldn't
-    if target_name.startswith("TOI"):
-        target_name_owls = target_name_owls + ".01"
-
-    owls_measurements = owls.loc[target_name_owls]
 
     owls_lc = LightCurve(
         time=Time(np.atleast_1d(owls_measurements['owls_time']), format='jd'),
@@ -316,21 +308,26 @@ def Page():
     selected_times, set_selected_times = solara.use_state(times[:maximum_files])
     selected_orders, set_selected_orders = solara.use_state([16, 17])
 
+    target_name_owls = target_name.replace("_", " ")
+    if target_name.startswith("TOI"):
+        # for now, the owls table has the ".01" suffix, but it shouldn't
+        target_name_owls = target_name_owls + ".01"
+    elif target_name == 'GJ 29':
+        # catch special case
+        target_name_owls = 'GJ 29.1'
+
+    owls_measurements = owls.loc[target_name_owls]
+
     if specviz is None:
         update_specviz(selected_paths, selected_times, selected_orders)
     if lcviz is None:
-        update_lcviz(target_name)
+        update_lcviz(target_name, owls_measurements)
 
     solara.Markdown("# OWLS – The Olin Wilson Legacy Survey")
 
     with solara.Column(align='center'):
         with solara.Row():
-            solara.display(specviz.app)
-        with solara.Row():
-            solara.display(lcviz.app)
-
-        with solara.Row():
-            with solara.Columns([1, 1]):
+            with solara.Columns([1, 1, 2]):
                 with solara.Column(align='start'):
                     solara.Markdown("### Target")
 
@@ -382,3 +379,14 @@ def Page():
                         dense=True
                     )
                     solara.Button("Select H & K orders only", on_hk_orders_only)
+
+                if isinstance(owls_measurements, pd.DataFrame):
+                    with solara.Column(align='start'):
+                        solara.Markdown("### OWLS measurements")
+                        solara.DataFrame(owls_measurements)
+
+
+        with solara.Row():
+            solara.display(specviz.app)
+        with solara.Row():
+            solara.display(lcviz.app)
