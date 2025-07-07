@@ -1,4 +1,5 @@
 import os
+import warnings
 from pathlib import Path
 import solara
 import re
@@ -52,7 +53,11 @@ downloaded_paths = download(urls.values())
 paths = {k: v for k, v in zip(urls.keys(), downloaded_paths)}
 
 owls_latest = json.load(open(paths['manifest'], 'r'))
-standard_spectrum = EchelleSpectrum.from_fits(paths['standard'])
+
+with warnings.catch_warnings():
+    warnings.simplefilter('ignore', UserWarning)
+    standard_spectrum = EchelleSpectrum.from_fits(paths['standard'])
+
 mwo_v1995 = pd.read_pickle(paths['mwo'])
 owls = pd.read_pickle(urls['owls'])
 specviz = None
@@ -71,9 +76,11 @@ hd_target_names_owls = {
 
 
 def to_spectrum1d(spec, meta=None):
+    nans = np.isnan(spec.flux) | np.isnan(spec.wavelength)
+    not_masked = ~spec.mask & ~nans
     return Spectrum1D(
-        flux=spec.flux[~spec.mask] / spec.flux[~spec.mask].max() * u.count,
-        spectral_axis=spec.wavelength[~spec.mask],
+        flux=spec.flux[not_masked] / np.nanmax(spec.flux[not_masked]) * u.count,
+        spectral_axis=spec.wavelength[not_masked],
         meta=meta,
     )
 
@@ -92,7 +99,7 @@ def update_specviz(selected_paths, selected_times, selected_orders):
         specviz = Specviz()
 
         # close plugin tray
-        specviz.app.state.drawer = False
+        specviz.app.state.drawer_content = ""
 
     target_spectrum = None
 
@@ -107,7 +114,10 @@ def update_specviz(selected_paths, selected_times, selected_orders):
         if target_path in loaded_paths and len(loaded_orders[path]) == selected_orders:
             continue
 
-        target_spectrum = EchelleSpectrum.from_fits(target_path)
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore', UserWarning)
+            target_spectrum = EchelleSpectrum.from_fits(target_path)
+
         target_spectrum.continuum_normalize_from_standard(
             standard_spectrum, 5, only_orders=selected_orders
         )
@@ -125,7 +135,12 @@ def update_specviz(selected_paths, selected_times, selected_orders):
         for i in selected_orders:
             order_i = to_spectrum1d(target_spectrum[i], meta=target_spectrum.header)
             data_label = f'{spectrum_time} (Order {i})'
-            specviz.load_data(order_i, data_label=data_label)
+
+            with warnings.catch_warnings():
+                warnings.simplefilter('ignore', u.UnitsWarning)
+
+                specviz.load_data(order_i, data_label=data_label)
+
             data = specviz.app.data_collection[data_label]
             data.meta['path'] = target_path
             data.meta['order'] = i
@@ -216,14 +231,8 @@ def update_lcviz(target_name, owls_measurements):
     if lcviz is None:
         lcviz = LCviz()
 
-        # remove import data button
-        lcviz.app.state.tool_items.pop(0)
-
-        # prevent saving files on the server
-        lcviz.plugins['Export']._obj.serverside_enabled = False
-
         # close plugin tray
-        lcviz.app.state.drawer = False
+        lcviz.app.state.drawer_content = ""
 
     if target_in_mwo:
         freq_analysis = lcviz.plugins['Frequency Analysis']
