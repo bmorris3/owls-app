@@ -332,9 +332,12 @@ def Page():
     if lcviz is None:
         update_lcviz(target_name, owls_measurements)
 
-    solara.Markdown("# OWLS – The Olin Wilson Legacy Survey")
-
     with solara.Column(align='center'):
+        with solara.Head():
+            solara.Title("OWLS: Olin Wilson Legacy Survey")
+        with solara.Row():
+            solara.Markdown("# OWLS – The Olin Wilson Legacy Survey")
+
         with solara.Row():
             with solara.Columns([1, 1, 2]):
                 with solara.Column(align='start'):
@@ -359,15 +362,23 @@ def Page():
                         set_selected_times(times)
 
                     solara.Select('Target', list(available_targets), target_name, on_target_change)
+
                     solara.SelectMultiple(
-                        'Observations', selected_times, times, on_times_change, dense=True,
+                        "Load Observations", selected_times, times, on_times_change, dense=True,
                     )
 
                     def on_all_obs():
                         all_times = [obs['datetime'] for obs in owls_latest if obs['target'] == target_name]
                         on_times_change(all_times)
 
-                    solara.Button("Select all obs.", on_all_obs)
+                    n_obs_available = len([obs['datetime'] for obs in owls_latest if obs['target'] == target_name])
+
+                    with solara.Tooltip(
+                        "Selected files will be downloaded and cached locally. Loading all "
+                        "observations for the first time can be slow, depending on your "
+                        "bandwidth."
+                    ):
+                        solara.Button(f"Select all obs. ({n_obs_available})", on_all_obs)
 
                     def on_orders_changed(labels, order_labels=order_labels):
                         new_orders = [order_labels.index(label) for label in labels]
@@ -387,15 +398,24 @@ def Page():
                         on_value=on_orders_changed,
                         dense=True
                     )
-                    solara.Button("Select H & K orders only", on_hk_orders_only)
+                    with solara.Tooltip(
+                        "Select only the spectral orders of"
+                        "ARCES with the Calcium H & K lines"
+                    ):
+                        solara.Button("Select H & K orders only", on_hk_orders_only)
 
                 if isinstance(owls_measurements, pd.DataFrame):
                     with solara.Column(align='start'):
                         solara.Markdown("### OWLS measurements")
                         solara.DataFrame(owls_measurements)
 
-
         with solara.Row():
             solara.display(specviz.app)
         with solara.Row():
             solara.display(lcviz.app)
+
+        with solara.Row():
+            with solara.Details("More about the spectrum viewer"):
+                solara.Text('text text')
+            with solara.Details("More about the spectrum viewer"):
+                solara.Text('text text')
