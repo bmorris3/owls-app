@@ -1,4 +1,5 @@
 import os
+import textwrap
 import warnings
 from pathlib import Path
 import solara
@@ -30,7 +31,8 @@ from aesop import EchelleSpectrum
 from specutils import Spectrum1D
 import pandas as pd
 from astropy.utils.data import download_files_in_parallel
-
+from ipywidgets import widgets
+from IPython.display import display
 
 pkgname = 'owls-app'
 
@@ -63,6 +65,7 @@ owls = pd.read_pickle(urls['owls'])
 specviz = None
 lcviz = None
 order_labels = None
+period_at_max_power = None
 
 hd_target_names_owls = {
     # Strip non-numeric characters, force to integer
@@ -188,7 +191,7 @@ def update_specviz(selected_paths, selected_times, selected_orders):
 
 
 def update_lcviz(target_name, owls_measurements):
-    global lcviz
+    global lcviz, period_at_max_power
     target_in_mwo = (
             target_name.startswith('HD') and
             int(target_name.split()[1]) in hd_target_names_owls.keys()
@@ -215,6 +218,8 @@ def update_lcviz(target_name, owls_measurements):
         power = ls.power(freq)
         freq_at_max_power = freq[np.argmax(power)]
         period_at_max_power = (1 / freq_at_max_power).value
+    else:
+        period_at_max_power = None
 
     owls_lc = LightCurve(
         time=Time(np.atleast_1d(owls_measurements['owls_time']), format='jd'),
@@ -332,90 +337,101 @@ def Page():
     if lcviz is None:
         update_lcviz(target_name, owls_measurements)
 
-    with solara.Column(align='center'):
-        with solara.Head():
-            solara.Title("OWLS: Olin Wilson Legacy Survey")
-        with solara.Row():
-            solara.Markdown("# OWLS – The Olin Wilson Legacy Survey")
+    name = "OWLS: Olin Wilson Legacy Survey"
+    solara.Title(name)
 
-        with solara.Row():
-            with solara.Columns([1, 1, 2]):
-                with solara.Column(align='start'):
-                    solara.Markdown("### Target")
+    with solara.AppBar():
+        solara.AppBarTitle(name)
+        solara.HTML(unsafe_innerHTML='<a href="https://github.com/bmorris3/owls-app" target="_blank" style="color: white;">View source on GitHub</a>')
 
-                    def on_target_change(target_name):
-                        global specviz, lcviz
-                        urls = urls_for_target(target_name)
-                        add_path = download(urls[0])
-                        add_times = times_for_target(target_name)
-                        specviz = lcviz = None  # force init of lcviz, specviz
-                        update_specviz(add_path, add_times[:1], selected_orders)
-                        set_target_name(target_name)
-                        set_selected_paths(add_path)
-                        set_selected_times(add_times[:1])
+    with solara.Sidebar(), solara.Column():
+        with solara.Card("Target", elevation=2):
+            with solara.Column():
+                def on_target_change(target_name):
+                    global specviz, lcviz
+                    urls = urls_for_target(target_name)
+                    add_path = download(urls[0])
+                    add_times = times_for_target(target_name)
+                    specviz = lcviz = None  # force init of lcviz, specviz
+                    update_specviz(add_path, add_times[:1], selected_orders)
+                    set_target_name(target_name)
+                    set_selected_paths(add_path)
+                    set_selected_times(add_times[:1])
 
-                    def on_times_change(times):
-                        urls = [obs['url'] for obs in owls_latest if obs['datetime'] in times]
-                        add_paths = download(urls)
-                        update_specviz(add_paths, times, selected_orders)
-                        set_selected_paths(add_paths)
-                        set_selected_times(times)
+                def on_times_change(times):
+                    urls = [obs['url'] for obs in owls_latest if obs['datetime'] in times]
+                    add_paths = download(urls)
+                    update_specviz(add_paths, times, selected_orders)
+                    set_selected_paths(add_paths)
+                    set_selected_times(times)
 
-                    solara.Select('Target', list(available_targets), target_name, on_target_change)
+                solara.Select('Target and time', list(available_targets), target_name, on_target_change)
 
-                    solara.SelectMultiple(
-                        "Load Observations", selected_times, times, on_times_change, dense=True,
-                    )
+                solara.SelectMultiple(
+                    "Load Observations", selected_times, times, on_times_change, dense=True,
+                )
 
-                    def on_all_obs():
-                        all_times = [obs['datetime'] for obs in owls_latest if obs['target'] == target_name]
-                        on_times_change(all_times)
+                def on_all_obs():
+                    all_times = [obs['datetime'] for obs in owls_latest if obs['target'] == target_name]
+                    on_times_change(all_times)
 
-                    n_obs_available = len([obs['datetime'] for obs in owls_latest if obs['target'] == target_name])
+                n_obs_available = len([obs['datetime'] for obs in owls_latest if obs['target'] == target_name])
 
-                    with solara.Tooltip(
-                        "Selected files will be downloaded and cached locally. Loading all "
-                        "observations for the first time can be slow, depending on your "
-                        "bandwidth."
-                    ):
-                        solara.Button(f"Select all obs. ({n_obs_available})", on_all_obs)
+                with solara.Tooltip(
+                    "Selected files will be downloaded and cached locally. Loading all "
+                    "observations for the first time can be slow, depending on your "
+                    "network."
+                ):
+                    solara.Button(f"Download all obs. ({n_obs_available})", on_all_obs)
 
-                    def on_orders_changed(labels, order_labels=order_labels):
-                        new_orders = [order_labels.index(label) for label in labels]
-                        update_specviz(selected_paths, selected_times, new_orders)
-                        set_selected_orders(new_orders)
+                def on_orders_changed(labels, order_labels=order_labels):
+                    new_orders = [order_labels.index(label) for label in labels]
+                    update_specviz(selected_paths, selected_times, new_orders)
+                    set_selected_orders(new_orders)
 
-                    def on_hk_orders_only():
-                        set_selected_orders([16, 17])
-                        update_specviz(selected_paths, selected_times, selected_orders)
+                def on_hk_orders_only():
+                    set_selected_orders([16, 17])
+                    update_specviz(selected_paths, selected_times, selected_orders)
 
-                with solara.Column(align='start'):
-                    solara.Markdown("### Spectral orders")
-                    solara.SelectMultiple(
-                        'Spectral orders',
-                        [order_labels[i] for i in selected_orders],
-                        order_labels,
-                        on_value=on_orders_changed,
-                        dense=True
-                    )
-                    with solara.Tooltip(
-                        "Select only the spectral orders of"
-                        "ARCES with the Calcium H & K lines"
-                    ):
-                        solara.Button("Select H & K orders only", on_hk_orders_only)
+        with solara.Card("Spectral orders", elevation=2):
+            solara.SelectMultiple(
+                'Spectral orders',
+                [order_labels[i] for i in selected_orders],
+                order_labels,
+                on_value=on_orders_changed,
+                dense=True
+            )
+            with solara.Tooltip(
+                "Select only the spectral orders of"
+                "ARCES with the Calcium H & K lines"
+            ):
+                solara.Button("Select H & K orders only", on_hk_orders_only)
 
-                if isinstance(owls_measurements, pd.DataFrame):
-                    with solara.Column(align='start'):
-                        solara.Markdown("### OWLS measurements")
-                        solara.DataFrame(owls_measurements)
+        if period_at_max_power is not None:
+            with solara.Card("Activity cycle", elevation=2):
+                solara.Markdown(
+                    f"**Period** at maximum power in the Lomb-Scargle periodogram of the $S$-index time series"
+                    f": {period_at_max_power / 365.25 :.2f} years"
+                )
 
-        with solara.Row():
+        with solara.Card("About OWLS Paper I", elevation=2):
+            with solara.Details('Abstract'):
+                solara.Text(' '.join(open(os.path.join(os.path.dirname(__file__), 'abstract.txt')).read().splitlines()))
+            with solara.Details('Authors'):
+                solara.Text("Brett M. Morris, Leslie Hebb, Suzanne L. Hawley, Kathryn Jones, Jake Romney")
+
+
+    with solara.Column():
+        with solara.Card() as specviz_card:
             solara.display(specviz.app)
-        with solara.Row():
-            solara.display(lcviz.app)
 
-        with solara.Row():
-            with solara.Details("More about the spectrum viewer"):
-                solara.Text('text text')
-            with solara.Details("More about the spectrum viewer"):
-                solara.Text('text text')
+        with solara.Card() as lcviz_card:
+            solara.display(lcviz.app)
+        items = [specviz_card, lcviz_card]
+        if isinstance(owls_measurements, pd.DataFrame):
+            with solara.Card() as df_card:
+                solara.Markdown("### OWLS measurements")
+                solara.DataFrame(owls_measurements)
+            items.append(df_card)
+
+    solara.GridDraggable(items=items, draggable=True, resizable=True)

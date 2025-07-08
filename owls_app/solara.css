@@ -1,10 +1,17 @@
 .solara-content-main {
-    padding-top: 0 !important;
+    /* padding-top: 0 !important; */
+    align-items: start;
 }
-.widget-output {
-    margin: 0;
-}
+
 .v-content.jdaviz__content--not-in-notebook {
-    height: 40vh;
-    width: 90vw;
+    display: flex !important;
+    height: 40vh !important;
+    width: 100% !important;
+    padding: 64px 0px 0px 0px !important;
+}
+
+.v-sheet {
+    left: 0px !important;
+    /* width: 100%; */
+    /* right: 0px !important; */
 }

@@ -26,7 +26,7 @@ To run the interactive tool, run:
 Multiple sessions
 ^^^^^^^^^^^^^^^^^
 
-If you already have an instance of `solara` or `whoseline` running, you can
+If you already have an instance of `solara` or `owls-app` running, you can
 launch a second one by specifying a different port:
 
 .. code-block:: bash

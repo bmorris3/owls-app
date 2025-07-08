@@ -1,0 +1,21 @@
+We present initial results from a planned 10~year survey of Ca II H \& K
+emission, using observations made with the ARC 3.5m Telescope at Apache
+Point Observatory.  The primary goal of the survey is to investigate
+activity cycles in low mass stars.  The sample includes stars chosen from
+the legacy Mount Wilson survey carried out by Olin Wilson more than 50 years ago,
+together with newly identified planet-host stars and a select sample of early-mid M~dwarfs.
+This paper presents the first four years of data, comprising 1040 observations
+of 271 stars, with a specific focus on K and M stars.  We identify a
+subsample of 153 stars for continuing observations over the full
+10~year survey. Early results indicate that our data are
+consistent with the MWO cycle periods over a time span of more than 50
+years; that there is a bifurcation in activity in the late K range with
+separate populations of low and high activity stars at lower masses; and
+that M dwarf planet hosts tend to be mainly found in the population of low
+activity stars, even in the unbiased (by activity) TESS sample,
+potentially indicating a link between activity and planet formation.
+We have also found indications of possible cyclic variability in some
+of the lower mass stars in the sample.  Our ultimate goal is
+to link the activity cycle and rotation periods in a robust sample of
+stars spanning FGKM spectral types and to investigate the implications
+for the underlying magnetic dynamo.
