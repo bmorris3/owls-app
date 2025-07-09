@@ -1,6 +1,7 @@
 import os
 import textwrap
 import warnings
+from functools import wraps
 from pathlib import Path
 import solara
 import re
@@ -12,7 +13,7 @@ import matplotlib.pyplot as plt
 from matplotlib.colors import to_hex
 
 import astropy.units as u
-from astropy.coordinates import SkyCoord, EarthLocation
+from astropy.coordinates import SkyCoord, EarthLocation, Longitude, Latitude
 from astropy.time import Time
 from astropy.timeseries import LombScargle
 
@@ -33,7 +34,10 @@ import pandas as pd
 from astropy.utils.data import download_files_in_parallel
 from ipywidgets import widgets
 from IPython.display import display
+from astroquery.simbad import Simbad
+import random
 
+Simbad.add_votable_fields('sp_type')
 pkgname = 'owls-app'
 
 urls = dict(
@@ -88,11 +92,25 @@ def to_spectrum1d(spec, meta=None):
     )
 
 
-available_targets = sorted(
+all_available_targets = sorted(
     set([
-        obs['target'] for obs in owls_latest
+        obs['target'] for obs in owls_latest if obs['target'] in owls.index
     ])
 )
+available_targets = solara.reactive(all_available_targets)
+show_mwo_targets_only = solara.reactive(True)
+
+show_spinner = solara.reactive(False)
+
+
+def with_spinner(f):
+    @wraps(f)
+    def wrapper(*args, **kwds):
+        show_spinner.set(True)
+        result = f(*args, **kwds)
+        show_spinner.set(False)
+        return result
+    return wrapper
 
 
 def update_specviz(selected_paths, selected_times, selected_orders):
@@ -144,9 +162,10 @@ def update_specviz(selected_paths, selected_times, selected_orders):
 
                 specviz.load_data(order_i, data_label=data_label)
 
-            data = specviz.app.data_collection[data_label]
-            data.meta['path'] = target_path
-            data.meta['order'] = i
+            if data_label in specviz.app.data_collection:
+                data = specviz.app.data_collection[data_label]
+                data.meta['path'] = target_path
+                data.meta['order'] = i
 
     # remove loaded datasets that have been deselected
     data_to_remove = []
@@ -163,23 +182,26 @@ def update_specviz(selected_paths, selected_times, selected_orders):
         if target_spectrum is not None:
             all_orders = list(range(len(target_spectrum)))
             order_labels = [
-                f'{i} ({target_spectrum[i].wavelength.value.min():.0f} - {target_spectrum[i].wavelength.value.max():.0f} Å) '
+                f'{i} ({target_spectrum[i].wavelength.value.min():.0f} '
+                f'- {target_spectrum[i].wavelength.value.max():.0f} Å) '
                 for i in all_orders
             ]
 
         with delay_callback(viewer.state, 'x_min', 'x_max', 'y_min', 'y_max'):
-            viewer.state.x_min = min([
-                layer.state.layer.get_component('World 0').data.min()
-                for layer in viewer.layers
-            ])
-            viewer.state.x_max = max([
-                layer.state.layer.get_component('World 0').data.max()
-                for layer in viewer.layers
-            ])
-            viewer.state.y_min = 0
-            viewer.state.y_max = max(
-                [layer.state.v_max for layer in viewer.layers]
-            )
+            if len(viewer.layers):
+                viewer.state.x_min = min([
+                    layer.state.layer.get_component('World 0').data.min()
+                    for layer in viewer.layers
+                ])
+                viewer.state.x_max = max([
+                    layer.state.layer.get_component('World 0').data.max()
+                    for layer in viewer.layers
+                ])
+                viewer.state.y_min = 0
+                viewer.state.y_max = max(
+                    layer.state.v_max for layer in viewer.layers
+                    if layer.state.v_max is not None
+                )
 
         colors = [to_hex(plt.cm.viridis(x)) for x in np.linspace(0, 0.9, len(selected_paths))]
 
@@ -190,14 +212,18 @@ def update_specviz(selected_paths, selected_times, selected_orders):
                     layer.state.color = colors[i]
 
 
-def update_lcviz(target_name, owls_measurements):
-    global lcviz, period_at_max_power
-    target_in_mwo = (
-            target_name.startswith('HD') and
-            int(target_name.split()[1]) in hd_target_names_owls.keys()
+def target_in_mwo(target_name):
+    return (
+        target_name.startswith('HD') and
+        int(target_name.split()[1]) in hd_target_names_owls.keys()
     )
 
-    if target_in_mwo:
+
+def update_lcviz(target_name, owls_measurements):
+    global lcviz, period_at_max_power
+
+    in_mwo = target_in_mwo(target_name)
+    if in_mwo:
         mwo_measurements = mwo_v1995.loc[int(target_name.split()[1])]
 
         mwo_lc = LightCurve(
@@ -227,7 +253,7 @@ def update_lcviz(target_name, owls_measurements):
         flux_err=np.atleast_1d(owls_measurements['owls_s_mwo_err']).astype(float)
     )
 
-    if target_in_mwo:
+    if in_mwo:
         time_model = np.linspace(mwo_lc.time.min(), owls_lc.time.max(), 500)
 
         model = ls.model(time_model, freq_at_max_power)
@@ -239,19 +265,19 @@ def update_lcviz(target_name, owls_measurements):
         # close plugin tray
         lcviz.app.state.drawer_content = ""
 
-    if target_in_mwo:
+    if in_mwo:
         freq_analysis = lcviz.plugins['Frequency Analysis']
         freq_analysis.auto_range = False
         freq_analysis.xunit = 'period'
         freq_analysis.minimum = min_period.value
         freq_analysis.maximum = max_period.value
 
-    if target_in_mwo:
+    if in_mwo:
         lcviz.load_data(mwo_lc, data_label='MWO')
 
     lcviz.load_data(owls_lc, data_label='OWLS')
 
-    if target_in_mwo:
+    if in_mwo:
         lcviz.load_data(model_lc, data_label='model')
 
         ephem = lcviz.plugins['Ephemeris']
@@ -272,7 +298,7 @@ def update_lcviz(target_name, owls_measurements):
                 marker_color,
                 marker_opacity
         ):
-            if layer in ['MWO', 'model'] and not target_in_mwo:
+            if layer in ['MWO', 'model'] and not in_mwo:
                 continue
 
             plot_opts.viewer = viewer
@@ -333,22 +359,30 @@ def Page():
     owls_measurements = owls.loc[target_name_owls]
 
     if specviz is None:
-        update_specviz(selected_paths, selected_times, selected_orders)
+        with_spinner(update_specviz(selected_paths, selected_times, selected_orders))
     if lcviz is None:
-        update_lcviz(target_name, owls_measurements)
+        with_spinner(update_lcviz(target_name, owls_measurements))
 
     name = "OWLS: Olin Wilson Legacy Survey"
     solara.Title(name)
 
     with solara.AppBar():
         solara.AppBarTitle(name)
-        solara.HTML(unsafe_innerHTML='<a href="https://github.com/bmorris3/owls-app" target="_blank" style="color: white;">View source on GitHub</a>')
+        solara.HTML(
+            unsafe_innerHTML=(
+                '<a href="https://github.com/bmorris3/owls-app" '
+                'target="_blank" style="color: white;">'
+                'View source on GitHub</a>')
+        )
 
     with solara.Sidebar(), solara.Column():
         with solara.Card("Target", elevation=2):
             with solara.Column():
+
+                @with_spinner
                 def on_target_change(target_name):
                     global specviz, lcviz
+
                     urls = urls_for_target(target_name)
                     add_path = download(urls[0])
                     add_times = times_for_target(target_name)
@@ -358,6 +392,7 @@ def Page():
                     set_selected_paths(add_path)
                     set_selected_times(add_times[:1])
 
+                @with_spinner
                 def on_times_change(times):
                     urls = [obs['url'] for obs in owls_latest if obs['datetime'] in times]
                     add_paths = download(urls)
@@ -365,12 +400,24 @@ def Page():
                     set_selected_paths(add_paths)
                     set_selected_times(times)
 
-                solara.Select('Target and time', list(available_targets), target_name, on_target_change)
-
-                solara.SelectMultiple(
-                    "Load Observations", selected_times, times, on_times_change, dense=True,
+                solara.Select(
+                    'Target', available_targets.value, 
+                    target_name, on_value=on_target_change
                 )
 
+                def show_mwo_only(show_mwo):
+                    show_mwo_targets_only.set(show_mwo)
+                    if show_mwo:
+                        mwo_targets = [target for target in all_available_targets if target_in_mwo(target)]
+                        available_targets.set(mwo_targets)
+                    else:
+                        available_targets.set(all_available_targets)
+
+                solara.SelectMultiple(
+                    "Time", selected_times, times, on_times_change, dense=True,
+                )
+
+                @with_spinner
                 def on_all_obs():
                     all_times = [obs['datetime'] for obs in owls_latest if obs['target'] == target_name]
                     on_times_change(all_times)
@@ -382,16 +429,72 @@ def Page():
                     "observations for the first time can be slow, depending on your "
                     "network."
                 ):
-                    solara.Button(f"Download all obs. ({n_obs_available})", on_all_obs)
+                    solara.Button(f"Load all {n_obs_available} spectra of {target_name}", on_all_obs)
+
+                @with_spinner
+                def choose_random_target():
+                    on_target_change(random.choice(available_targets.value))
+
+                target_type_prefix = 'MWO ' if show_mwo_targets_only.value else ''
+                solara.Button(
+                    f"Select random {target_type_prefix}target", choose_random_target
+                )
+                solara.ProgressLinear(show_spinner.value)
+
+                with solara.Div():
+                    solara.Text("Limit target list to:")
+                    solara.Checkbox(
+                        label="MWO targets", 
+                        value=show_mwo_targets_only.value,
+                        on_value=show_mwo_only
+                    )
 
                 def on_orders_changed(labels, order_labels=order_labels):
                     new_orders = [order_labels.index(label) for label in labels]
                     update_specviz(selected_paths, selected_times, new_orders)
                     set_selected_orders(new_orders)
 
-                def on_hk_orders_only():
-                    set_selected_orders([16, 17])
+                def update_selected_orders(selected_orders):
+                    set_selected_orders(selected_orders)
                     update_specviz(selected_paths, selected_times, selected_orders)
+
+                def on_hk_orders_only():
+                    update_selected_orders(selected_orders=[16, 17])
+
+                def on_halpha_order_only():
+                    update_selected_orders(selected_orders=[74])
+
+                def on_na_id_order_only():
+                    update_selected_orders(selected_orders=[64])
+
+                simbad_result = Simbad.query_object(target_name)
+                if len(simbad_result):
+                    with solara.Details("Target details"):
+                        series = simbad_result[['main_id', 'ra', 'dec', 'sp_type']].to_pandas().transpose()[0]
+                        remap_names = dict(
+                            main_id='SIMBAD ID',
+                            ra="RA",
+                            dec="Dec",
+                            sp_type='Spectral Type'
+                        )
+                        series_strs = []
+                        for k, v in series.items():
+                            if k == "ra":
+                                v = Longitude(v, 'deg').to_string(pad=True, unit='hourangle', format='latex')
+                            elif k == "dec":
+                                v = Latitude(v, 'deg').to_string(pad=True, format='latex')
+
+                            series_strs.append(f"**{remap_names[k]}:** {v}")
+
+                        solara.Markdown('\n\n'.join(series_strs))
+
+                        simbad_main_id = series["main_id"]
+                        solara.HTML(
+                            unsafe_innerHTML=(
+                                f'<a href="https://simbad.cds.unistra.fr/simbad/sim-id?Ident={simbad_main_id}" '
+                                f'target="_blank">Open {simbad_main_id} in SIMBAD</a>'
+                            )
+                        )
 
         with solara.Card("Spectral orders", elevation=2):
             solara.SelectMultiple(
@@ -401,37 +504,50 @@ def Page():
                 on_value=on_orders_changed,
                 dense=True
             )
-            with solara.Tooltip(
-                "Select only the spectral orders of"
-                "ARCES with the Calcium H & K lines"
-            ):
-                solara.Button("Select H & K orders only", on_hk_orders_only)
+            with solara.Column():
+                with solara.Tooltip(
+                    "only the spectral orders of "
+                    "ARCES with the Calcium H & K lines"
+                ):
+                    solara.Button("Calcium H & K", on_hk_orders_only)
+                with solara.Tooltip(
+                    "Select only the spectral order of "
+                    "ARCES with Hydrogen alpha."
+                ):
+                    solara.Button("H-alpha", on_halpha_order_only)
+                with solara.Tooltip(
+                    "Select only the spectral order of "
+                    "ARCES with the Na I D doublet."
+                ):
+                    solara.Button("Sodium doublet", on_na_id_order_only)
 
         if period_at_max_power is not None:
-            with solara.Card("Activity cycle", elevation=2):
+            with solara.Card("Possible cycle", elevation=2):
                 solara.Markdown(
                     f"**Period** at maximum power in the Lomb-Scargle periodogram of the $S$-index time series"
                     f": {period_at_max_power / 365.25 :.2f} years"
                 )
 
         with solara.Card("About OWLS Paper I", elevation=2):
-            with solara.Details('Abstract'):
-                solara.Text(' '.join(open(os.path.join(os.path.dirname(__file__), 'abstract.txt')).read().splitlines()))
             with solara.Details('Authors'):
                 solara.Text("Brett M. Morris, Leslie Hebb, Suzanne L. Hawley, Kathryn Jones, Jake Romney")
+            with solara.Details('Abstract'):
+                solara.Text(' '.join(
+                    open(
+                        os.path.join(os.path.dirname(__file__), 'abstract.txt')
+                    ).read().splitlines()
+                ))
 
+    with solara.Card(margin=0):
+        solara.display(specviz.app)
 
-    with solara.Column():
-        with solara.Card() as specviz_card:
-            solara.display(specviz.app)
+    with solara.Card(margin=0):
+        solara.display(lcviz.app)
 
-        with solara.Card() as lcviz_card:
-            solara.display(lcviz.app)
-        items = [specviz_card, lcviz_card]
-        if isinstance(owls_measurements, pd.DataFrame):
-            with solara.Card() as df_card:
+    if isinstance(owls_measurements, pd.DataFrame):
+        with solara.Card(margin=0):
+            with solara.Column():
                 solara.Markdown("### OWLS measurements")
                 solara.DataFrame(owls_measurements)
-            items.append(df_card)
-
-    solara.GridDraggable(items=items, draggable=True, resizable=True)
+    else:
+        solara.Info("No reliable S-index measurements available.")

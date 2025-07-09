@@ -26,6 +26,7 @@ dependencies = [
     "lcviz",
     "specutils",
     "aesop-arces",
+    "astroquery",
 ]
 authors = [
   { name = "Brett Morris", email = "morrisbrettm@gmail.com" },
