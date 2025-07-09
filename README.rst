@@ -1,6 +1,25 @@
 owls-app
 ========
 
+.. image:: http://img.shields.io/badge/powered%20by-AstroPy-orange.svg?style=flat
+    :target: http://www.astropy.org
+    :alt: Powered by Astropy Badge
+
+.. image:: http://img.shields.io/badge/powered%20by-jdaviz-336699.svg?style=flat
+    :target: https://github.com/spacetelescope/jdaviz/
+    :alt: Powered by jdaviz
+
+.. image:: http://img.shields.io/badge/powered%20by-lightkurve-336699.svg?style=flat
+    :target: https://github.com/spacetelescope/lcviz/
+    :alt: Powered by lcviz
+
+.. image:: http://img.shields.io/badge/powered%20by-specutils-ff9722.svg?style=flat
+    :target: https://github.com/astropy/specutils/
+    :alt: Powered by specutils
+
+
+
+
 Interactive visualization tool for time-series spectra from the Olin Wilson Legacy Survey 
 (OWLS).
 
@@ -40,6 +59,49 @@ launch a second one by specifying a different port:
 Details
 -------
 
+What is this spectrum viewer?
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Meet **Specviz** (`docs <https://jdaviz.readthedocs.io/en/stable/specviz/index.html>`_,
+`source <https://github.com/spacetelescope/jdaviz/>`_) 
+part of the ``jdaviz`` interactive data visualization and analysis package 
+developed at the Space Telescope Science Institute. Specviz supports quite
+advanced workflows that we won't summarize here -- check out their docs at
+the link above.
+
+What is this time series viewer?
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Meet **LCviz** (`docs <https://lcviz.readthedocs.io/>`_, 
+`source <https://github.com/spacetelescope/lcviz>`_),  a light curve visualization
+and analysis tool built on ``jdaviz``, developed at the Space Telescope Science 
+Institute. LCviz supports quite advanced workflows that we won't summarize
+here -- check out their docs at the link above.
+
+
+How are the echelle orders normalized?
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+The app will attempt to remove the continuum from each echelle order by 
+dividing out a fifth order polynomial fit to the corresponding order of 
+an ARCES spectrum of the hot subdwarf standard
+`HZ 44 <https://simbad.cds.unistra.fr/simbad/sim-id?Ident=HZ+44>`_ to roughly
+remove the blaze function, and then dividing by the order's maximum flux.
+This normalization method is most imprecise near strong lines in hot star 
+atmospheres. The flux units of the spectrum viewer are thus relative flux.
+
+
+Can I download these spectra?
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Yes! We're submitting all spectra to MAST as HLSPs, though it may take some time
+before they're available on MAST. `Reach out to Brett <mailto:morrisbrettm@gmail.com>`_
+if you'd like them sooner.
+
+
+Are the spectra saved locally?
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
 When you select a new observation, ``owls-app`` will download and cache the spectrum 
 from a collection OWLS FITS files hosted online. The cache is managed using the 
 `astropy cache machinery <https://docs.astropy.org/en/stable/utils/data.html>`_, which 
@@ -55,3 +117,5 @@ To clear the OWLS observations from the cache on your machine, you can call:
 
 Note: if no package name is specified, this command would delete any files cached 
 by astropy, and you might not want that.
+
+
