@@ -14,9 +14,8 @@
 
 .v-sheet {
     left: 0px !important;
-    /* width: 100%; */
-    /* right: 0px !important; */
 }
+
 .v-application--wrap {
     height: 100% !important;
 }
