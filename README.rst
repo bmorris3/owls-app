@@ -9,7 +9,7 @@ owls-app
     :target: https://github.com/spacetelescope/jdaviz/
     :alt: Powered by jdaviz
 
-.. image:: http://img.shields.io/badge/powered%20by-lightkurve-336699.svg?style=flat
+.. image:: http://img.shields.io/badge/powered%20by-lcviz-336699.svg?style=flat
     :target: https://github.com/spacetelescope/lcviz/
     :alt: Powered by lcviz
 
