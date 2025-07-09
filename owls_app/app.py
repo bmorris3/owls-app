@@ -52,6 +52,8 @@ def download(urls, **kwargs):
     if isinstance(urls, str):
         urls = [urls]
 
+    if not len(urls):
+        return []
     return download_files_in_parallel(urls, pkgname=pkgname, cache=True, show_progress=False)
 
 
