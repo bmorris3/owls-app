@@ -11,7 +11,7 @@ build-backend = 'setuptools.build_meta'
 name = "owls-app"
 dynamic = ['version']
 license = { file = "LICENSE", content-type = "text/plain" }
-readme = { file = "README.rst", content-type = "text/x-rst" }
+readme = "README.rst"
 description = "Olin Wilson Legacy Survey"
 dependencies = [
     "matplotlib",
