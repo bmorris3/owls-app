@@ -98,7 +98,7 @@ all_available_targets = sorted(
     ])
 )
 available_targets = solara.reactive(all_available_targets)
-show_mwo_targets_only = solara.reactive(True)
+show_mwo_targets_only = solara.reactive(False)
 
 show_spinner = solara.reactive(False)
 
@@ -219,6 +219,39 @@ def target_in_mwo(target_name):
     )
 
 
+def override_viewer_x_axis_units(time_viewer, x_unit=u.year):
+    def _set_plot_x_axes(self, dc, component_labels, light_curve=None, reference_time=None, x_unit=x_unit):
+        for d in dc:
+            component_id = d.component_ids()[0]
+            time_axis_component = d.get_component(component_id)
+            if time_axis_component.units != str(x_unit):
+                time_axis_original_units = time_axis_component.data * u.Unit(time_axis_component.units)
+                time_axis_target_units = time_axis_original_units.to_value(x_unit)
+                d.update_components(
+                    {component_id: time_axis_target_units}
+                )
+                time_axis_component.units = str(x_unit)
+                self.x_unit = x_unit
+                self.state.x_min = time_axis_target_units.min()
+                self.state.x_max = time_axis_target_units.max()
+
+        self.state.x_att = dc[0].components[component_labels.index('dt')]
+
+        if light_curve is not None and reference_time is None:
+            reference_time = light_curve.meta.get('reference_time', None)
+        elif reference_time is None:
+            reference_time = dc[0].coords.reference_time
+
+        xlabel = f'{str(x_unit.physical_type).title()} from {reference_time.iso} ({self.x_unit})'
+
+        self.figure.axes[0].label = xlabel
+        self.figure.axes[0].num_ticks = 5
+
+    time_viewer._set_plot_x_axes = lambda *args, **kwargs: _set_plot_x_axes(time_viewer, *args, **kwargs)
+    time_viewer.set_plot_axes()
+    time_viewer.reset_limits()
+
+
 def update_lcviz(target_name, owls_measurements):
     global lcviz, period_at_max_power
 
@@ -276,6 +309,9 @@ def update_lcviz(target_name, owls_measurements):
         lcviz.load_data(mwo_lc, data_label='MWO')
 
     lcviz.load_data(owls_lc, data_label='OWLS')
+
+    viewer = lcviz.app.get_viewer('flux-vs-time')
+    override_viewer_x_axis_units(viewer)
 
     if in_mwo:
         lcviz.load_data(model_lc, data_label='model')
@@ -433,11 +469,11 @@ def Page():
 
                 @with_spinner
                 def choose_random_target():
+                    show_mwo_only(True)
                     on_target_change(random.choice(available_targets.value))
 
-                target_type_prefix = 'MWO ' if show_mwo_targets_only.value else ''
                 solara.Button(
-                    f"Select random {target_type_prefix}target", choose_random_target
+                    f"Select random MWO target", choose_random_target
                 )
                 solara.ProgressLinear(show_spinner.value)
 
