@@ -81,6 +81,13 @@ and analysis tool built on ``jdaviz``, developed at the Space Telescope Science
 Institute. LCviz supports quite advanced workflows that we won't summarize
 here -- check out their docs at the link above.
 
+The large red points are OWLS measurements. The small black measurements 
+are from the Mount Wilson Observatory (MWO) HK project by Olin Wilson and
+collaborators. The blue model in the S-index time series viewer is a 
+three-term sinusoid with the fundamental period set to the period at 
+maximum power in the Lomb-Scargle periodogram for the MWO observations, 
+for periods between between 5 and 15 years. The blue model is not trained
+on the OWLS observations. 
 
 How are the echelle orders normalized?
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
